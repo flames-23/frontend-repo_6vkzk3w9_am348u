@@ -54,7 +54,13 @@ const defaultData = {
       highlights: ['Offline-first', 'Ekspor PDF/Excel', 'Barcode'],
       image: ''
     }
-  ]
+  ],
+  users: [
+    { id: 'admin', name: 'Admin', email: 'admin@demo.com', password: 'admin123', role: 'admin' }
+  ],
+  auth: {
+    currentUser: null
+  }
 }
 
 const AppDataContext = createContext(null)
@@ -62,7 +68,22 @@ const AppDataContext = createContext(null)
 export function AppDataProvider({ children }) {
   const [data, setData] = useState(() => {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : defaultData
+    if (!raw) return defaultData
+    try {
+      const parsed = JSON.parse(raw)
+      // Backward compatible merge
+      return {
+        ...defaultData,
+        ...parsed,
+        about: { ...defaultData.about, ...(parsed.about || {}) },
+        posts: parsed.posts || defaultData.posts,
+        products: parsed.products || defaultData.products,
+        users: parsed.users || defaultData.users,
+        auth: parsed.auth || defaultData.auth
+      }
+    } catch (e) {
+      return defaultData
+    }
   })
 
   useEffect(() => {
@@ -81,7 +102,27 @@ export function AppDataProvider({ children }) {
     // Products
     createProduct: (prod) => setData((d) => ({ ...d, products: [{ ...prod, id: slugify(prod.name) }, ...d.products] })),
     updateProduct: (id, next) => setData((d) => ({ ...d, products: d.products.map((p) => (p.id === id ? { ...p, ...next } : p)) })),
-    deleteProduct: (id) => setData((d) => ({ ...d, products: d.products.filter((p) => p.id !== id) }))
+    deleteProduct: (id) => setData((d) => ({ ...d, products: d.products.filter((p) => p.id !== id) })),
+
+    // Users
+    createUser: (user) => setData((d) => ({ ...d, users: [{ ...user, id: user.id || uid(), role: user.role || 'user' }, ...d.users] })),
+    updateUser: (id, next) => setData((d) => ({ ...d, users: d.users.map((u) => (u.id === id ? { ...u, ...next } : u)) })),
+    deleteUser: (id) => setData((d) => ({ ...d, users: d.users.filter((u) => u.id !== id) })),
+
+    // Auth
+    login: (email, password) => setData((d) => {
+      const u = d.users.find((x) => x.email.toLowerCase() === String(email).toLowerCase() && x.password === password)
+      if (!u) return d
+      const { password: _pw, ...safe } = u
+      return { ...d, auth: { currentUser: safe } }
+    }),
+    logout: () => setData((d) => ({ ...d, auth: { currentUser: null } })),
+    register: (payload) => setData((d) => {
+      const exists = d.users.some((x) => x.email.toLowerCase() === String(payload.email).toLowerCase())
+      if (exists) return d
+      const newUser = { id: uid(), name: payload.name || 'User', email: payload.email, password: payload.password, role: 'user' }
+      return { ...d, users: [newUser, ...d.users] }
+    })
   }), [])
 
   return (
@@ -104,4 +145,8 @@ function slugify(str) {
     .trim()
     .replace(/\s+/g, '-')
     .slice(0, 60)
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10)
 }
